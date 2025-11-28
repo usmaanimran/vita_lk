@@ -109,7 +109,7 @@ def load_data(filename, source_type="Cloud"):
         return None
 
 
-@st.fragment(run_every=30)
+@st.fragment(run_every=900)
 def main_dashboard(source_mode):
     
     df_risk = load_data("risk_history.csv", source_mode)
