@@ -7,3 +7,4 @@ requests
 textblob
 lxml
 python-dateutil
+plotly
