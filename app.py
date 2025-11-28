@@ -41,9 +41,10 @@ st.markdown("""
     """, unsafe_allow_html=True)
 
 
-GITHUB_USER = "usmaanimran"
+GITHUB_USER = "usmaanimran" 
 REPO_NAME = "vita_lk"
 BRANCH = "main"
+
 
 BASE_URL = f"https://raw.githubusercontent.com/{GITHUB_USER}/{REPO_NAME}/{BRANCH}/"
 
@@ -53,17 +54,17 @@ def load_data(filename, source_type="Cloud"):
     local_path = os.path.join("data", filename)
     remote_url = BASE_URL + "data/" + filename
 
-    
     if source_type == "Cloud":
         try:
+           
             return pd.read_csv(remote_url, storage_options={'User-Agent': 'Mozilla/5.0'})
-        except Exception:
+        except Exception as e:
+            
             if os.path.exists(local_path):
                 return pd.read_csv(local_path)
             return None
-
-    
     else:
+       
         if os.path.exists(local_path):
             return pd.read_csv(local_path)
         return None
@@ -71,12 +72,13 @@ def load_data(filename, source_type="Cloud"):
 
 @st.fragment(run_every=30)
 def main_dashboard(source_mode):
-   
+    
+    
     df_risk = load_data("risk_history.csv", source_mode)
     df_news = load_data("daily_news_scan.csv", source_mode)
     df_market = load_data("market_data.csv", source_mode)
     
-    
+   
     if df_risk is None or df_risk.empty:
         st.warning("📡 Waiting for Intelligence Stream...")
         if source_mode == "Cloud":
@@ -85,15 +87,14 @@ def main_dashboard(source_mode):
             st.info("Checking local 'data/' folder.")
         return
 
- 
-    latest = df_risk.iloc[-1]
     
+    latest = df_risk.iloc[-1]
     
     risk_score = int(latest.get("Total_Risk", 0))
     top_headline = latest.get("Top_Headline", "No Headlines Available")
     timestamp = latest.get("Timestamp", "N/A")
     
-    
+   
     anomaly_val = latest.get('Anomaly_Flag', False)
     if str(anomaly_val).lower() in ['true', '1']:
         st.error(
@@ -101,13 +102,12 @@ def main_dashboard(source_mode):
             "Risk Score deviating > 2 Sigma from 24h mean. Immediate attention required."
         )
 
-
+   
     if df_news is not None and not df_news.empty:
-        
+       
         emerging = df_news[df_news['Headline'].str.contains('Emerging Trend', case=False, na=False)]
         
         if not emerging.empty:
-           
             clean_trends = [h.replace("⚠️ Emerging Trend:", "").strip() for h in emerging['Headline'].tolist()]
             threat_text = "   🛑   ".join(clean_trends)
             
@@ -117,7 +117,7 @@ def main_dashboard(source_mode):
             </div>
             """, unsafe_allow_html=True)
 
-    
+   
     if risk_score > 75:
         status_color = "🔴 CRITICAL"
         status_msg = "ACTIVATE CONTINGENCY"
@@ -131,7 +131,7 @@ def main_dashboard(source_mode):
         status_msg = "BUSINESS AS USUAL"
         color_code = "#3CB371"
 
-   
+
     st.markdown("### 📡 Vita.LK")
     
     col1, col2, col3 = st.columns([1.2, 1.8, 1])
@@ -165,17 +165,17 @@ def main_dashboard(source_mode):
 
     st.divider()
 
-   
+  
     st.markdown("### 📊 Strategic Analysis")
+    
     
     try:
         df_risk['Timestamp'] = pd.to_datetime(df_risk['Timestamp'])
-        
         df_risk = df_risk.sort_values('Timestamp')
-        cutoff = datetime.now() - timedelta(hours=24)
-        df_24h = df_risk 
+       
+        df_chart = df_risk
     except:
-        df_24h = df_risk.tail(50)
+        df_chart = df_risk
 
     chart_col1, chart_col2 = st.columns([2, 1])
 
@@ -183,13 +183,14 @@ def main_dashboard(source_mode):
         st.markdown("**Synergy Risk Trend (Multi-Factor Interaction)**")
         
         risk_cols = ['Total_Risk', 'Economic_Risk', 'Social_Risk', 'Environmental_Risk', 'News_Risk']
-        available_cols = [c for c in risk_cols if c in df_24h.columns]
+        available_cols = [c for c in risk_cols if c in df_chart.columns]
         
-        if not df_24h.empty:
+        if not df_chart.empty:
             fig = px.line(
-                df_24h, 
+                df_chart, 
                 x='Timestamp', 
                 y=available_cols,
+                markers=True, 
                 color_discrete_map={
                     "Total_Risk": "#FF4B4B",
                     "Economic_Risk": "#1E88E5",
@@ -201,17 +202,33 @@ def main_dashboard(source_mode):
             fig.update_traces(line=dict(width=2))
             fig.for_each_trace(lambda t: t.update(line=dict(width=4)) if t.name == 'Total_Risk' else None)
             
+            
+            if not df_chart.empty and 'Timestamp' in df_chart.columns:
+                last_time = df_chart['Timestamp'].iloc[-1]
+        
+                start_zoom = last_time - timedelta(hours=4)
+                initial_range = [start_zoom, last_time]
+            else:
+                initial_range = None
+
             fig.update_layout(
                 legend_title="Risk Factors",
                 margin=dict(l=0, r=0, t=30, b=0),
                 height=380,
                 hovermode="x unified",
                 xaxis_title=None,
-                yaxis_title="Risk Score (0-100)"
+                yaxis_title="Risk Score (0-100)",
+              
+                xaxis=dict(
+                    rangeslider=dict(visible=True, thickness=0.05),
+                    type="date",
+                    range=initial_range 
+                )
             )
             st.plotly_chart(fig, use_container_width=True)
         else:
             st.info("Insufficient history for chart.")
+ 
 
     with chart_col2:
         st.markdown("**Current Risk Distribution**")
@@ -222,6 +239,7 @@ def main_dashboard(source_mode):
             "Environment": latest.get('Environmental_Risk', 0),
             "News/Politics": latest.get('News_Risk', 0)
         }
+     
         pie_data = {k: v for k, v in pie_data.items() if v > 0}
         
         if pie_data:
@@ -238,10 +256,10 @@ def main_dashboard(source_mode):
         else:
             st.info("No significant risk drivers active.")
 
-   
+    
     st.markdown("### 📰 Live Intelligence Feed")
     if df_news is not None and not df_news.empty:
-      
+
         df_news = df_news.sort_values(by='Risk', ascending=False)
         
         st.dataframe(
