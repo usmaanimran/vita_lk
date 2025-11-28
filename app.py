@@ -25,7 +25,7 @@ st.markdown("""
         background-color: #262730; 
         padding: 12px; 
         border-radius: 8px; 
-        border-left: 6px solid #FF4B4B; /* RED for high alert */
+        border-left: 6px solid #FF4B4B; 
         margin-bottom: 25px;
         color: #ffffff;
         font-weight: 500;
@@ -37,6 +37,48 @@ st.markdown("""
         padding: 15px;
         border-radius: 10px;
     }
+
+ 
+    @media (max-width: 768px) {
+
+        .big-font {
+            font-size: 42px !important;
+        }
+
+        .st-emotion-cache-18ni7ap {
+            padding-top: 0.2rem !important;
+        }
+
+        div[data-testid="stMetric"] {
+            padding: 10px !important;
+        }
+
+        .hot-topic-marquee {
+            font-size: 14px !important;
+            padding: 8px !important;
+        }
+
+        .block-container {
+            padding-left: 1rem !important;
+            padding-right: 1rem !important;
+        }
+
+        [data-testid="column"] {
+            width: 100% !important;
+            flex-direction: column !important;
+            flex-basis: 100% !important;
+        }
+
+        .js-plotly-plot, .plot-container {
+            width: 100% !important;
+            height: auto !important;
+        }
+        
+        .stProgress > div > div {
+            height: 15px !important;
+        }
+    }
+
     </style>
     """, unsafe_allow_html=True)
 
@@ -56,15 +98,12 @@ def load_data(filename, source_type="Cloud"):
 
     if source_type == "Cloud":
         try:
-           
             return pd.read_csv(remote_url, storage_options={'User-Agent': 'Mozilla/5.0'})
         except Exception as e:
-            
             if os.path.exists(local_path):
                 return pd.read_csv(local_path)
             return None
     else:
-       
         if os.path.exists(local_path):
             return pd.read_csv(local_path)
         return None
@@ -73,12 +112,10 @@ def load_data(filename, source_type="Cloud"):
 @st.fragment(run_every=30)
 def main_dashboard(source_mode):
     
-    
     df_risk = load_data("risk_history.csv", source_mode)
     df_news = load_data("daily_news_scan.csv", source_mode)
     df_market = load_data("market_data.csv", source_mode)
     
-   
     if df_risk is None or df_risk.empty:
         st.warning("📡 Waiting for Intelligence Stream...")
         if source_mode == "Cloud":
@@ -87,14 +124,12 @@ def main_dashboard(source_mode):
             st.info("Checking local 'data/' folder.")
         return
 
-    
     latest = df_risk.iloc[-1]
     
     risk_score = int(latest.get("Total_Risk", 0))
     top_headline = latest.get("Top_Headline", "No Headlines Available")
     timestamp = latest.get("Timestamp", "N/A")
     
-   
     anomaly_val = latest.get('Anomaly_Flag', False)
     if str(anomaly_val).lower() in ['true', '1']:
         st.error(
@@ -102,9 +137,7 @@ def main_dashboard(source_mode):
             "Risk Score deviating > 2 Sigma from 24h mean. Immediate attention required."
         )
 
-   
     if df_news is not None and not df_news.empty:
-       
         emerging = df_news[df_news['Headline'].str.contains('Emerging Trend', case=False, na=False)]
         
         if not emerging.empty:
@@ -117,7 +150,6 @@ def main_dashboard(source_mode):
             </div>
             """, unsafe_allow_html=True)
 
-   
     if risk_score > 75:
         status_color = "🔴 CRITICAL"
         status_msg = "ACTIVATE CONTINGENCY"
@@ -130,7 +162,6 @@ def main_dashboard(source_mode):
         status_color = "🟢 STABLE"
         status_msg = "BUSINESS AS USUAL"
         color_code = "#3CB371"
-
 
     st.markdown("### 📡 Vita.LK")
     
@@ -165,14 +196,12 @@ def main_dashboard(source_mode):
 
     st.divider()
 
-  
     st.markdown("### 📊 Strategic Analysis")
     
     
     try:
         df_risk['Timestamp'] = pd.to_datetime(df_risk['Timestamp'])
         df_risk = df_risk.sort_values('Timestamp')
-       
         df_chart = df_risk
     except:
         df_chart = df_risk
@@ -202,10 +231,8 @@ def main_dashboard(source_mode):
             fig.update_traces(line=dict(width=2))
             fig.for_each_trace(lambda t: t.update(line=dict(width=4)) if t.name == 'Total_Risk' else None)
             
-            
             if not df_chart.empty and 'Timestamp' in df_chart.columns:
                 last_time = df_chart['Timestamp'].iloc[-1]
-        
                 start_zoom = last_time - timedelta(hours=4)
                 initial_range = [start_zoom, last_time]
             else:
@@ -218,7 +245,6 @@ def main_dashboard(source_mode):
                 hovermode="x unified",
                 xaxis_title=None,
                 yaxis_title="Risk Score (0-100)",
-              
                 xaxis=dict(
                     rangeslider=dict(visible=True, thickness=0.05),
                     type="date",
@@ -228,7 +254,6 @@ def main_dashboard(source_mode):
             st.plotly_chart(fig, use_container_width=True)
         else:
             st.info("Insufficient history for chart.")
- 
 
     with chart_col2:
         st.markdown("**Current Risk Distribution**")
@@ -256,7 +281,6 @@ def main_dashboard(source_mode):
         else:
             st.info("No significant risk drivers active.")
 
-    
     st.markdown("### 📰 Live Intelligence Feed")
     if df_news is not None and not df_news.empty:
 
@@ -287,7 +311,7 @@ def system_footer():
     source_mode = st.sidebar.radio(
         "Select Input Stream:",
         ["Cloud", "Local"],
-        index=0, 
+        index=0,
         help="Cloud: Fetches from GitHub Repo (Robot). Local: Fetches from your laptop."
     )
     
