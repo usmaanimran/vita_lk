@@ -48,7 +48,11 @@ RISK_KEYWORDS = {
         "power cut": ["economic", "energy"],
         "default": ["economic"],
         "flood": ["environmental", "logistics"],
-        "landslide": ["environmental", "logistics"]
+        "landslide": ["environmental", "logistics"],
+        
+        "submerged": ["environmental", "logistics"],
+        "inundated": ["environmental", "logistics"],
+        "overflow": ["environmental", "logistics"]
     },
     "medium": {
         "union": ["political", "labor"],
@@ -59,7 +63,11 @@ RISK_KEYWORDS = {
         "election": ["political"],
         "ceb": ["energy"],
         "cbsl": ["economic"],
-        "rain": ["environmental"]
+        "rain": ["environmental"],
+        
+        "kelani": ["environmental", "logistics"],
+        "gin": ["environmental"],
+        "nilwala": ["environmental"] 
     }
 }
 
@@ -123,7 +131,13 @@ def detect_emerging_threats(all_titles):
     top_emerging_threat = ""
     
     
-    stopwords = ["the", "in", "of", "to", "for", "a", "and", "on", "at", "with", "from", "by", "sri", "lanka", "colombo", "news", "breaking", "daily"]
+    stopwords = [
+        "the", "in", "of", "to", "for", "a", "and", "on", "at", "with", "from", "by", 
+        "sri", "lanka", "colombo", "news", "breaking", "daily", "report", "update", 
+        "today", "yesterday", "after", "before", "during", "auction", "market", 
+        "meeting", "talks", "visit", "says", "minister", "president", "government",
+        "sells", "extra", "price", "rate", "bond", "treasury", "bill"
+    ]
 
     for phrase, count in counts.items():
         if count >= 2:
@@ -155,7 +169,7 @@ def calculate_news_risk():
     ]
     
     total_news_score = 0
-    headlines_data = []
+    current_scan_headlines = [] 
     all_titles_raw = [] 
     
     logging.info("Scanning News Feeds (Fuzzy + Adaptive Logic)...")
@@ -210,11 +224,12 @@ def calculate_news_risk():
                 total_news_score += score
                 
                 if score > 0:
-                    headlines_data.append({
+                    current_scan_headlines.append({
                         "Headline": entry.title,
                         "Risk": score,
                         "Sector": sector_tag,
-                        "Link": entry.link
+                        "Link": entry.link,
+                        "Timestamp": datetime.datetime.now(SL_TIMEZONE).strftime("%Y-%m-%d %H:%M:%S")
                     })
                     
         except Exception as e:
@@ -224,17 +239,38 @@ def calculate_news_risk():
     emerging_score, emerging_topic = detect_emerging_threats(all_titles_raw)
     if emerging_score > 0:
         total_news_score += emerging_score
-        headlines_data.insert(0, {
+        
+        
+        search_query = emerging_topic.replace(' ', '+')
+        smart_link = f"https://www.google.com/search?q={search_query}+Sri+Lanka+News"
+        
+        current_scan_headlines.insert(0, {
             "Headline": f"⚠️ Emerging Trend: {emerging_topic.upper()}",
             "Risk": emerging_score,
             "Sector": "Uncategorized",
-            "Link": "#"
+            "Link": smart_link, 
+            "Timestamp": datetime.datetime.now(SL_TIMEZONE).strftime("%Y-%m-%d %H:%M:%S")
         })
 
-    if headlines_data:
-        pd.DataFrame(headlines_data).to_csv(NEWS_LOG_FILE, index=False)
+    if current_scan_headlines:
+        new_df = pd.DataFrame(current_scan_headlines)
         
-    return min(100, total_news_score), headlines_data
+        if os.path.exists(NEWS_LOG_FILE):
+            try:
+                old_df = pd.read_csv(NEWS_LOG_FILE)
+                combined_df = pd.concat([old_df, new_df])
+                combined_df.drop_duplicates(subset=["Headline"], keep='last', inplace=True)
+                
+                if len(combined_df) > 50:
+                    combined_df = combined_df.tail(50)
+                
+                combined_df.to_csv(NEWS_LOG_FILE, index=False)
+            except Exception:
+                new_df.to_csv(NEWS_LOG_FILE, index=False)
+        else:
+            new_df.to_csv(NEWS_LOG_FILE, index=False)
+        
+    return min(100, total_news_score), current_scan_headlines
 
 
 def get_env_social_risk(news_score, eco_risk, headlines):
@@ -246,17 +282,38 @@ def get_env_social_risk(news_score, eco_risk, headlines):
     # real plan A
     if OPENWEATHER_API_KEY:
         try:
-           
-            city_id = 1248469
-            url = f"https://api.openweathermap.org/data/2.5/weather?id={city_id}&appid={OPENWEATHER_API_KEY}"
-            r = requests.get(url, timeout=3)
-            if r.status_code == 200:
-                data = r.json()
-               
-                rain_1h = data.get('rain', {}).get('1h', 0)
-                if rain_1h > 10: env_risk = 40
-                if rain_1h > 50: env_risk = 90
-                weather_source = "Live API"
+            
+            cities = {
+                "Colombo": 1248469,    
+                "Kelaniya": 1241940,  
+                "Kandy": 1241622,      
+                "Galle": 1246294,      
+                "Jaffna": 1242833,     
+                "Trincomalee": 1226260,
+                "Anuradhapura": 1251081,
+                "Ratnapura": 1229621,  
+                "Batticaloa": 1250161, 
+                "Badulla": 1249931,    
+                "Puttalam": 1229699    
+            }
+            
+            max_rain = 0
+            
+            for city_name, city_id in cities.items():
+                url = f"https://api.openweathermap.org/data/2.5/weather?id={city_id}&appid={OPENWEATHER_API_KEY}"
+                r = requests.get(url, timeout=1.0) 
+                if r.status_code == 200:
+                    data = r.json()
+                    rain_1h = data.get('rain', {}).get('1h', 0)
+                    if rain_1h > max_rain:
+                        max_rain = rain_1h
+            
+            if max_rain > 10: env_risk = 40
+            if max_rain > 50: env_risk = 90
+            
+            if max_rain >= 0: 
+                weather_source = "Live API (All-Island)"
+                
         except Exception:
             logging.warning("Weather API Failed. Switching to Deterministic Fallback.")
 
@@ -270,7 +327,9 @@ def get_env_social_risk(news_score, eco_risk, headlines):
     
     
     for h in headlines:
-        if "flood" in h["Headline"].lower() or "landslide" in h["Headline"].lower():
+        
+        title_l = h["Headline"].lower()
+        if "flood" in title_l or "landslide" in title_l or "overflow" in title_l:
             env_risk = 90
             weather_source = "News Verification"
             logging.info("🌊 DETECTED FLOOD NEWS: Escalating Environmental Risk")
@@ -319,14 +378,14 @@ def analyze_history(current_score):
                     mean = recent_window.mean()
                     std = recent_window.std()
                     
-                   
+                    
                     if std > 0.01:
                         z_score = (current_score - mean) / std
                         if z_score > 2.0:
                             is_anomaly = True
                             logging.warning(f"🚨 ANOMALY DETECTED: Risk > 2 Sigma above mean")
                     else:
-                       
+                        
                         is_anomaly = False
                         
         except Exception:
