@@ -1,10 +1,10 @@
 name: Vita.lk daily scan
 
 on:
-
+  
   repository_dispatch:
     types: [trigger_scan]
-  
+ 
   workflow_dispatch:
 
   schedule:
@@ -25,7 +25,6 @@ jobs:
         uses: actions/checkout@v4
         with:
           fetch-depth: 0 
-
       - name: Set Up Python
         uses: actions/setup-python@v4
         with:
@@ -57,11 +56,11 @@ jobs:
           # 3. Delete all files in the 'data' branch (we only want data files here)
           git rm -rf . 2>/dev/null || true
           
-          # 4. RESTORE ONLY the data files from the stash (This fixes the conflict)
+          # 4. RESTORE ONLY the data files from the stash (Fixes the merge conflict)
           git checkout stash -- data/*.csv
           
           # 5. Commit and Force Push to the 'data' branch
           # The "|| echo" prevents the workflow from failing if no files changed
           git add data/*.csv
           git commit -m "LIVE DATA: $(date)" || echo "No changes to commit"
-          git push -f origin data
+          git push -f origin HEAD:data  # <-- The final fix for the 'refspec data' error
