@@ -1,9 +1,12 @@
 name: Vita.lk daily scan
 
 on:
+
   repository_dispatch:
     types: [trigger_scan]
+  
   workflow_dispatch:
+
   schedule:
     - cron: '*/20 * * * *'
 
@@ -18,29 +21,47 @@ jobs:
       SCAN_MODE: "production"
 
     steps:
-      - uses: actions/checkout@v4
+      - name: Checkout Code
+        uses: actions/checkout@v4
         with:
-          fetch-depth: 0
+          fetch-depth: 0 
 
-      - uses: actions/setup-python@v4
+      - name: Set Up Python
+        uses: actions/setup-python@v4
         with:
           python-version: '3.9'
           cache: 'pip'
 
-      - run: |
+      - name: Install Dependencies
+        run: |
           python -m pip install --upgrade pip
           if [ -f requirements.txt ]; then pip install -r requirements.txt; fi
 
-      - run: python scraper.py
+      - name: Run Scraper
+        run: python scraper.py
 
-      - run: |
+      - name: Commit Data to Orphan Branch
+        run: |
+          # Configure Git Bot
           git config --global user.name "Vita.lk Bot"
           git config --global user.email "bot@vita.lk"
+          
+          # 1. Stage and save the new data
           git add data/*.csv
           git stash push -m "New Data"
+          
+          # 2. Switch to or create the 'data' branch
+          # The "||" means "if the first command fails, run the second one"
           git checkout data 2>/dev/null || git checkout --orphan data
+          
+          # 3. Delete all files in the 'data' branch (we only want data files here)
           git rm -rf . 2>/dev/null || true
-          git stash apply
+          
+          # 4. RESTORE ONLY the data files from the stash (This fixes the conflict)
+          git checkout stash -- data/*.csv
+          
+          # 5. Commit and Force Push to the 'data' branch
+          # The "|| echo" prevents the workflow from failing if no files changed
           git add data/*.csv
-          git commit -m "LIVE DATA: $(date)"
+          git commit -m "LIVE DATA: $(date)" || echo "No changes to commit"
           git push -f origin data
