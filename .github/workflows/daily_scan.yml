@@ -1,41 +1,46 @@
 name: Vita.lk daily scan
 
 on:
-  schedule:
-    - cron: '*/30 * * * *'
+  repository_dispatch:
+    types: [trigger_scan]
   workflow_dispatch:
+  schedule:
+    - cron: '*/20 * * * *'
 
 jobs:
   run-scraper:
     runs-on: ubuntu-latest
     permissions:
       contents: write
-    timeout-minutes: 15
-
+    timeout-minutes: 10
     env:
       TZ: 'Asia/Colombo'
-      scan_mode: "live"
+      SCAN_MODE: "production"
 
     steps:
-      - name: Checkout Code
-        uses: actions/checkout@v4
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
 
-      - name: Set up Python
-        uses: actions/setup-python@v4
+      - uses: actions/setup-python@v4
         with:
           python-version: '3.9'
+          cache: 'pip'
 
-      - name: Install Dependencies
-        run: |
+      - run: |
           python -m pip install --upgrade pip
           if [ -f requirements.txt ]; then pip install -r requirements.txt; fi
 
-      - name: Run Vita.lk Engine
-        run: python scraper.py
+      - run: python scraper.py
 
-      - name: Commit and Push Data
-        run: |
+      - run: |
           git config --global user.name "Vita.lk Bot"
           git config --global user.email "bot@vita.lk"
           git add data/*.csv
-          git diff --quiet && git diff --staged --quiet || (git commit -m "Vita.lk Auto-Update: Real-time Intelligence Data" && git push)
+          git stash push -m "New Data"
+          git checkout data 2>/dev/null || git checkout --orphan data
+          git rm -rf . 2>/dev/null || true
+          git stash apply
+          git add data/*.csv
+          git commit -m "LIVE DATA: $(date)"
+          git push -f origin data
