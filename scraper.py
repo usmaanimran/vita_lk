@@ -7,9 +7,36 @@ import pytz
 import yfinance as yf
 import requests
 import difflib
+import time
 from dateutil import parser
 from collections import Counter
 
+
+try:
+    import firebase_admin
+    from firebase_admin import credentials, firestore
+    
+  
+    SERVICE_ACCOUNT_FILE = os.path.join("data", "serviceAccountKey.json")
+    
+    
+    CANVAS_APP_ID = "sl_risk_monitor"
+    CANVAS_USER_ID = "backend_service_user"
+
+    if not firebase_admin._apps and os.path.exists(SERVICE_ACCOUNT_FILE):
+        cred = credentials.Certificate(SERVICE_ACCOUNT_FILE)
+        firebase_admin.initialize_app(cred)
+        DB = firestore.client()
+        FIRESTORE_ENABLED = True
+        print("🔥 Firestore Connected Successfully.")
+    else:
+        DB = None
+        FIRESTORE_ENABLED = False
+        print("⚠️ Firestore not initialized. Check data/serviceAccountKey.json")
+except ImportError:
+    DB = None
+    FIRESTORE_ENABLED = False
+    print("⚠️ firebase-admin not installed. Run: pip install firebase-admin")
 
 try:
     from textblob import TextBlob
@@ -20,10 +47,14 @@ except (ImportError, LookupError):
     from textblob import TextBlob
 
 
+
 DATA_FOLDER = "data"
 RISK_HISTORY_FILE = os.path.join(DATA_FOLDER, "risk_history.csv")
 MARKET_DATA_FILE = os.path.join(DATA_FOLDER, "market_data.csv")
 NEWS_LOG_FILE = os.path.join(DATA_FOLDER, "daily_news_scan.csv")
+
+
+WEATHER_API_KEY = "25a1c1bf27df41f98a875031253011"
 
 DEMO_MODE = False 
 
@@ -31,11 +62,27 @@ logging.basicConfig(level=logging.INFO, format='%(asctime)s - %(levelname)s - %(
 SL_TIMEZONE = pytz.timezone('Asia/Colombo')
 
 
-OPENWEATHER_API_KEY = "4a17807b0535b7463f3be3a1e3260951" 
+_CACHE_STORE = {}
+
+def is_cache_valid(key, ttl_seconds):
+    """Checks if data in cache is fresh."""
+    if key not in _CACHE_STORE:
+        return False
+    timestamp, _ = _CACHE_STORE[key]
+    
+    if time.time() - timestamp < ttl_seconds:
+        return True
+    return False
+
+def get_from_cache(key):
+    return _CACHE_STORE[key][1]
+
+def save_to_cache(key, data):
+    _CACHE_STORE[key] = (time.time(), data)
+
 
 
 RSS_FEEDS = [
-    
     "http://www.adaderana.lk/rss.php",
     "https://www.dailymirror.lk/RSS_Feeds/breaking_news",
     "https://www.newsfirst.lk/feed/",
@@ -48,15 +95,12 @@ RSS_FEEDS = [
     "https://www.colombopage.com/index.xml",       
     "https://metdept.lk/feed/",                    
     "https://timesonline.lk/feed",                 
-
     "https://news.google.com/rss/search?q=Sri+Lanka+Economy+when:1d&hl=en-LK&gl=LK&ceid=LK:en",
     "https://news.google.com/rss/search?q=Sri+Lanka+Crisis+when:1d&hl=en-LK&gl=LK&ceid=LK:en"
 ]
 
-
 RISK_KEYWORDS = {
     "high": {
-        
         "strike": ["transport", "logistics"],
         "hartal": ["social", "political"],
         "curfew": ["social", "political"],
@@ -149,9 +193,7 @@ RISK_KEYWORDS = {
         "factory explosion": ["industrial"],
         "hazardous material": ["industrial"]
     },
-
     "medium": {
-      
         "union": ["labor", "political"],
         "trade union action": ["labor", "political"],
         "sick note": ["labor"],
@@ -211,7 +253,6 @@ RISK_KEYWORDS = {
         "gin": ["environmental"],
         "nilwala": ["environmental"]
     },
-    
     "low": {
        "tension rising": ["social"],
        "concerns": ["social"],
@@ -229,7 +270,7 @@ RISK_KEYWORDS = {
        "rumor": ["social"],
        "unconfirmed report": ["social"],
        "protests planned": ["social", "political"]
-   }
+    }
 }
 
 IGNORE_KEYWORDS = [
@@ -241,7 +282,17 @@ IGNORE_KEYWORDS = [
 ]
 
 
+
+
 def get_market_data():
+    
+    CACHE_KEY = "market_data"
+    TTL = 60 
+
+    if is_cache_valid(CACHE_KEY, TTL):
+        logging.info("⚡ Using Cached Market Data")
+        return get_from_cache(CACHE_KEY)
+
     logging.info("Fetching Market Data...")
     
     market_data = {
@@ -249,17 +300,6 @@ def get_market_data():
         "oil_price": 75.00,
         "source": "Hardcoded (Init)"
     }
-
- 
-    if os.path.exists(MARKET_DATA_FILE):
-        try:
-            old_df = pd.read_csv(MARKET_DATA_FILE)
-            if not old_df.empty:
-                market_data["usd_lkr"] = old_df["usd_lkr"].iloc[-1]
-                market_data["oil_price"] = old_df["oil_price"].iloc[-1]
-                market_data["source"] = "Fail-Safe (CSV)"
-        except Exception:
-            pass
 
    
     try:
@@ -278,11 +318,45 @@ def get_market_data():
     except Exception as e:
         logging.warning(f"Yahoo API Failed: {e}. Using {market_data['source']}")
 
+    
     pd.DataFrame([market_data]).to_csv(MARKET_DATA_FILE, index=False)
+    
+    
+    save_to_cache(CACHE_KEY, market_data)
+    
     return market_data
 
 
+def get_weather_data():
+   
+    CACHE_KEY = "weather_data"
+    TTL = 900 
+
+    if is_cache_valid(CACHE_KEY, TTL):
+        return get_from_cache(CACHE_KEY)
+
+    logging.info("Fetching Live Weather Data (WeatherAPI)...")
+    cities = ["Colombo", "Kandy", "Galle", "Jaffna", "Trincomalee", "Ratnapura", "Anuradhapura", "Batticaloa"]
+    max_rain_mm = 0.0
+    
+    try:
+        for city in cities:
+            url = f"http://api.weatherapi.com/v1/current.json?key={WEATHER_API_KEY}&q={city}&aqi=no"
+            r = requests.get(url, timeout=2)
+            if r.status_code == 200:
+                data = r.json()
+                precip = data.get('current', {}).get('precip_mm', 0.0)
+                if precip > max_rain_mm:
+                    max_rain_mm = precip
+    except Exception as e:
+        logging.error(f"Weather API Error: {e}")
+    
+    save_to_cache(CACHE_KEY, max_rain_mm)
+    return max_rain_mm
+
+
 def detect_emerging_threats(all_titles):
+   
     words = []
     for title in all_titles:
         clean = ''.join(e for e in title.lower() if e.isalnum() or e.isspace())
@@ -294,25 +368,19 @@ def detect_emerging_threats(all_titles):
     emerging_risk_score = 0
     top_emerging_threat = ""
     
-  
     stopwords = [
-        
         "the", "in", "of", "to", "for", "a", "and", "on", "at", "with", "from", "by", 
         "today", "yesterday", "after", "before", "during", "read", "more", "click", "here", 
         "watch", "video", "live", "full", "story", "update", "report", "news", "breaking",
-        
         "sri", "lanka", "colombo", "daily", "government", "president", "minister", "cabinet",
         "parliament", "state", "national", "island", "country", "people", "public",
-        
         "al", "jazeera", "bbc", "cnn", "reuters", "times", "guardian", "economynext", 
         "adaderana", "ft", "morning", "island", "mirror", "first", "watch", "lbo", "ceylon", 
         "sunday", "online",
-        
         "auction", "market", "meeting", "talks", "visit", "says", "sells", "extra", 
         "price", "rate", "bond", "treasury", "bill", "yield", "rupee", "cents", 
         "stocks", "shares", "bank", "central", "issue", "debt", "loan", "imf",
         "output", "lost", "gain", "loss", "toll", "rise", "drop", "fall", "high", "low", "death",
-        
         "dissanayake", "wickremesinghe", "rajapaksa", "premadeasa", "harini", "amarasuriya",
         "crisis", "economic", "policy", "reform", "budget"
     ]
@@ -338,37 +406,38 @@ def detect_emerging_threats(all_titles):
 
 
 def calculate_news_risk():
+    
+    CACHE_KEY = "news_data"
+    TTL = 900 
+
+    if is_cache_valid(CACHE_KEY, TTL):
+        logging.info("⚡ Using Cached News Data")
+        return get_from_cache(CACHE_KEY)
+
     rss_urls = RSS_FEEDS
     
     total_news_score = 0
     current_scan_headlines = [] 
     all_titles_raw = [] 
     
-    logging.info("Scanning Expanded Intelligence Network (12 Sources)...")
-    
+    logging.info("Scanning Expanded Intelligence Network (Sources)...")
     
     time_threshold = datetime.datetime.now(SL_TIMEZONE) - datetime.timedelta(hours=6)
     
     for url in rss_urls:
         try:
             feed = feedparser.parse(url)
-           
             for entry in feed.entries[:10]:
-                
-                
                 article_time = None
                 if hasattr(entry, 'published'):
                     try:
                         article_time = parser.parse(entry.published)
-                       
                         if article_time.tzinfo is None:
                             article_time = article_time.replace(tzinfo=pytz.utc)
-                        
                         article_time = article_time.astimezone(SL_TIMEZONE)
                     except:
                         pass 
                 
-           
                 if article_time and article_time < time_threshold:
                     continue
 
@@ -431,14 +500,11 @@ def calculate_news_risk():
         except Exception as e:
             logging.error(f"Feed Error {url}: {e}")
 
-
     emerging_score, emerging_topic = detect_emerging_threats(all_titles_raw)
     if emerging_score > 0:
         total_news_score += emerging_score
-        
         search_query = emerging_topic.replace(' ', '+')
         smart_link = f"https://www.google.com/search?q={search_query}+Sri+Lanka+News"
-        
         current_scan_headlines.insert(0, {
             "Headline": f"⚠️ Emerging Trend: {emerging_topic.upper()}",
             "Risk": emerging_score,
@@ -447,100 +513,92 @@ def calculate_news_risk():
             "Timestamp": datetime.datetime.now(SL_TIMEZONE).strftime("%Y-%m-%d %H:%M:%S")
         })
 
-
+   
     if current_scan_headlines:
         new_df = pd.DataFrame(current_scan_headlines)
-        
         if os.path.exists(NEWS_LOG_FILE):
             try:
                 old_df = pd.read_csv(NEWS_LOG_FILE)
                 combined_df = pd.concat([old_df, new_df])
-                
                 combined_df.drop_duplicates(subset=["Headline"], keep='last', inplace=True)
-             
                 combined_df['SortKey'] = combined_df['Headline'].apply(lambda x: 0 if "Emerging Trend" in str(x) else 1)
                 combined_df = combined_df.sort_values(by=['SortKey', 'Timestamp'], ascending=[True, False])
                 combined_df = combined_df.drop(columns=['SortKey'])
-                
-                
-                if len(combined_df) > 100:
-                    combined_df = combined_df.head(100)
-                
+                if len(combined_df) > 100: combined_df = combined_df.head(100)
                 combined_df.to_csv(NEWS_LOG_FILE, index=False)
             except Exception:
                 new_df.to_csv(NEWS_LOG_FILE, index=False)
         else:
             new_df.to_csv(NEWS_LOG_FILE, index=False)
         
-    return min(100, total_news_score), current_scan_headlines
+    result = (min(100, total_news_score), current_scan_headlines)
+    save_to_cache(CACHE_KEY, result)
+    return result
 
 
-def get_env_social_risk(news_score, eco_risk, headlines):
-    env_risk = 0
-    weather_source = "Simulation"
+
+
+def calculate_continuous_economy_risk(usd_rate, oil_price):
+    """
+    New Behavior: Continuous. Moves with every Rupee/Dollar.
+    """
+   
+    usd_baseline = 290
+    usd_risk = 0
+    if usd_rate > usd_baseline:
+        usd_risk = (usd_rate - usd_baseline) * 1.5
     
-    if OPENWEATHER_API_KEY:
-        try:
-            cities = {
-                "Colombo": 1248469,    "Kelaniya": 1241940,
-                "Kandy": 1241622,      "Galle": 1246294,
-                "Jaffna": 1242833,     "Trincomalee": 1226260,
-                "Anuradhapura": 1251081,"Ratnapura": 1229621,  
-                "Batticaloa": 1250161, "Badulla": 1249931,    
-                "Puttalam": 1229699    
-            }
-            
-            max_rain = 0
-            for city_name, city_id in cities.items():
-                url = f"https://api.openweathermap.org/data/2.5/weather?id={city_id}&appid={OPENWEATHER_API_KEY}"
-                r = requests.get(url, timeout=1.0) 
-                if r.status_code == 200:
-                    data = r.json()
-                    rain_1h = data.get('rain', {}).get('1h', 0)
-                    if rain_1h > max_rain: max_rain = rain_1h
-            
-            if max_rain > 10: env_risk = 40
-            if max_rain > 50: env_risk = 90
-            if max_rain >= 0: weather_source = "Live API (All-Island)"
-                
-        except Exception:
-            logging.warning("Weather API Failed. Switching to Fallback.")
-
-    if env_risk == 0:
-        current_month = datetime.datetime.now().month
-        is_monsoon = current_month in [5, 6, 9, 10, 11]
-        env_risk = 40 if is_monsoon else 10
-        weather_source = "Seasonality Logic"
     
+    oil_risk = 0
+    if oil_price > 80:
+        oil_risk = (oil_price - 80) * 2
+        
+    total_eco_risk = min(100, int(usd_risk + oil_risk))
+    return total_eco_risk
+
+
+def calculate_dynamic_env_risk(headlines):
+   
+    base_risk = 15
+    
+    
+    max_rain = get_weather_data()
+    
+   
+    rain_risk = max_rain * 2.0
+    
+    
+    news_env_escalation = 0
     for h in headlines:
-        title_l = h["Headline"].lower()
+        title_l = h['Headline'].lower()
         if "flood" in title_l or "landslide" in title_l or "overflow" in title_l:
-            env_risk = 90
-            weather_source = "News Verification"
+            news_env_escalation = 50
             logging.info("🌊 DETECTED FLOOD NEWS: Escalating Environmental Risk")
-
-    social_risk = int((news_score * 0.5) + (eco_risk * 0.3) + 20)
-    
-    logging.info(f"Env Risk: {env_risk} (Source: {weather_source}) | Social Risk: {social_risk}")
-    
-    return env_risk, min(100, social_risk)
+            break
+            
+    final_env_risk = base_risk + rain_risk + news_env_escalation
+    return min(100, int(final_env_risk))
 
 
-def calculate_synergy_risk(news_score, market_data, env_score, social_score):
-    eco_risk = 0
-    if market_data["usd_lkr"] > 320: eco_risk += 30
-    elif market_data["usd_lkr"] > 300: eco_risk += 15
-    if market_data["oil_price"] > 90: eco_risk += 15
+def calculate_weighted_total_risk(news, eco, env, social):
+    """
+    New Behavior: Weighted sum.
+    """
+   
+    w_eco = 0.35
+    w_news = 0.30
+    w_social = 0.20
+    w_env = 0.15
     
-    base_score = max(news_score, eco_risk, env_score)
+    weighted_score = (eco * w_eco) + (news * w_news) + (social * w_social) + (env * w_env)
     
-    multiplier = 1.0
-    if eco_risk > 20 and news_score > 30:
-        multiplier = 1.25 
-        logging.info("⚠️ SYSTEMIC SYNERGY DETECTED: Applying 1.25x Risk Multiplier")
     
-    final_score = int(base_score * multiplier)
-    return min(100, final_score), eco_risk
+    synergy_factor = 1.0
+    if eco > 60 and social > 60:
+        synergy_factor = 1.25
+        
+    final_score = weighted_score * synergy_factor
+    return min(100, int(final_score))
 
 
 def analyze_history(current_score):
@@ -558,7 +616,6 @@ def analyze_history(current_score):
                 if len(recent_window) > 1:
                     mean = recent_window.mean()
                     std = recent_window.std()
-                    
                     if std > 0.01:
                         z_score = (current_score - mean) / std
                         if z_score > 2.0:
@@ -570,6 +627,36 @@ def analyze_history(current_score):
     return momentum, is_anomaly
 
 
+def upload_to_firestore(new_record, headlines_list):
+    """Pushes the latest risk record to Firestore."""
+    if not DB or not FIRESTORE_ENABLED:
+        logging.warning("Firestore is disabled. Skipping database upload.")
+        return
+
+    try:
+        
+        latest_doc_ref = DB.document(f'artifacts/{CANVAS_APP_ID}/users/{CANVAS_USER_ID}/riskData/latest')
+        
+        
+        data_to_save = {
+            **new_record,
+            "Headlines": headlines_list,
+            "USD": new_record.get("USD"),
+            "Oil_Price": new_record.get("Oil_Price")
+        }
+        
+        latest_doc_ref.set(data_to_save)
+        logging.info("⚡️ Successfully pushed latest risk data to Firestore.")
+        
+      
+        history_collection = DB.collection(f'artifacts/{CANVAS_APP_ID}/users/{CANVAS_USER_ID}/riskHistory')
+        doc_id = new_record['Timestamp'].replace(' ', '_')
+        history_collection.document(doc_id).set(new_record)
+
+    except Exception as e:
+        logging.error(f"FATAL FIRESTORE UPLOAD ERROR: {e}")
+
+
 def run_scraper():
     if not os.path.exists(DATA_FOLDER):
         os.makedirs(DATA_FOLDER)
@@ -577,15 +664,22 @@ def run_scraper():
     if DEMO_MODE:
         logging.warning("🚨 DEMO MODE ACTIVE")
 
+  
     fin_data = get_market_data()
     news_risk, headlines = calculate_news_risk()
     
-    temp_eco_risk = 0
-    if fin_data["usd_lkr"] > 300: temp_eco_risk += 15
-    if fin_data["oil_price"] > 90: temp_eco_risk += 15
     
-    env_risk, social_risk = get_env_social_risk(news_risk, temp_eco_risk, headlines)
-    final_score, eco_risk = calculate_synergy_risk(news_risk, fin_data, env_risk, social_risk)
+    eco_risk = calculate_continuous_economy_risk(fin_data["usd_lkr"], fin_data["oil_price"])
+    
+   
+    env_risk = calculate_dynamic_env_risk(headlines)
+    
+   
+    social_risk = int((news_risk * 0.4) + (eco_risk * 0.4) + 10)
+    
+   
+    final_score = calculate_weighted_total_risk(news_risk, eco_risk, env_risk, social_risk)
+    
     momentum, is_anomaly = analyze_history(final_score)
     
     timestamp = datetime.datetime.now(SL_TIMEZONE).strftime("%Y-%m-%d %H:%M:%S")
@@ -600,18 +694,22 @@ def run_scraper():
         "Social_Risk": social_risk,
         "Top_Headline": top_story,
         "USD": fin_data["usd_lkr"],
+        "Oil_Price": fin_data["oil_price"],
         "Momentum": momentum,
         "Anomaly_Flag": is_anomaly
     }
     
-    df = pd.DataFrame([new_record])
+   
+    upload_to_firestore(new_record, headlines)
+
     
+    df = pd.DataFrame([new_record])
     if os.path.exists(RISK_HISTORY_FILE):
         df.to_csv(RISK_HISTORY_FILE, mode='a', header=False, index=False)
     else:
         df.to_csv(RISK_HISTORY_FILE, mode='w', header=True, index=False)
 
-    logging.info(f"✅ RUN COMPLETE. Risk: {final_score}. Saved to {RISK_HISTORY_FILE}")
+    logging.info(f"✅ RUN COMPLETE. Risk: {final_score}. Data pushed to Firestore.")
 
 if __name__ == "__main__":
     run_scraper()
