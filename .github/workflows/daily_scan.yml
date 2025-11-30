@@ -24,37 +24,36 @@ jobs:
       - name: Set Up Python
         uses: actions/setup-python@v4
         with:
-          python-version: '3.11'
+          python-version: '3.11' 
           cache: 'pip'
 
       - name: Install Dependencies
         run: |
           python -m pip install --upgrade pip
+          # Force install all required libraries
           pip install firebase-admin feedparser pandas yfinance requests textblob
           if [ -f requirements.txt ]; then pip install -r requirements.txt; fi
 
-     
+      
       - name: Create Service Account Key
         env:
-         
-          FIREBASE_KEY_JSON: ${{ secrets.FIREBASE_SERVICE_ACCOUNT_KEY}}
+          FIREBASE_KEY_BASE64: ${{ secrets.FIREBASE_SERVICE_ACCOUNT_KEY }}
         run: |
-          # Use Python to write the string directly to a file (avoids shell corruption)
-          python -c "import os; open('data/serviceAccountKey.json', 'w').write(os.environ['FIREBASE_KEY_JSON'])"
+          python -c "import os, base64; open('data/serviceAccountKey.json', 'wb').write(base64.b64decode(os.environ['FIREBASE_KEY_BASE64']))"
           
-          # Verify file exists
+          # Verify the file was created (prints "Success" if file size > 0)
           if [ -s data/serviceAccountKey.json ]; then
-            echo "✅ Success! Key file created."
+            echo "✅ Success! Service Account Key created securely."
           else
             echo "❌ ERROR: Key file creation failed."
             exit 1
           fi
 
-     
+      
       - name: Run Scraper
         run: python scraper.py
 
-    
+     
       - name: Commit and Push Data to Main Branch
         run: |
           git config --global user.name "Vita.lk Bot"
