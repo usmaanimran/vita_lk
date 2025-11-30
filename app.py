@@ -3,6 +3,7 @@ import pandas as pd
 import plotly.express as px
 import os
 import json
+import ast 
 from datetime import datetime, timedelta
 
 
@@ -17,32 +18,43 @@ try:
     import firebase_admin
     from firebase_admin import credentials, firestore
     
-    
+   
     if not firebase_admin._apps:
        
         if "FIREBASE_KEY" in st.secrets:
-           
             secret_value = st.secrets["FIREBASE_KEY"]
-            
+            key_dict = None
+
+          
             if isinstance(secret_value, dict):
-               
                 key_dict = secret_value
+            
             else:
-              
                 try:
+                   
                     key_dict = json.loads(secret_value, strict=False)
                 except json.JSONDecodeError:
-                   
-                    clean_json = secret_value.replace('\n', '\\n')
-                    key_dict = json.loads(clean_json, strict=False)
+                    
+                    try:
+                        key_dict = ast.literal_eval(secret_value)
+                    except Exception:
+                        st.sidebar.error("⚠️ Secrets Parsing Error: Check JSON format.")
 
-            cred = credentials.Certificate(key_dict)
-            firebase_admin.initialize_app(cred)
-            DB = firestore.client()
-            ST_FIRESTORE_ENABLED = True
-            st.sidebar.success("🔥 Firestore Connected (Cloud)")
+            if key_dict:
+                
+                if "private_key" in key_dict:
+                    key_dict["private_key"] = key_dict["private_key"].replace("\\n", "\n")
+
+                cred = credentials.Certificate(key_dict)
+                firebase_admin.initialize_app(cred)
+                DB = firestore.client()
+                ST_FIRESTORE_ENABLED = True
+                st.sidebar.success("🔥 Firestore Connected (Cloud)")
+            else:
+                DB = None
+                ST_FIRESTORE_ENABLED = False
             
-      
+       )
         elif os.path.exists("data/serviceAccountKey.json"):
             cred = credentials.Certificate("data/serviceAccountKey.json")
             firebase_admin.initialize_app(cred)
@@ -50,7 +62,7 @@ try:
             ST_FIRESTORE_ENABLED = True
             st.sidebar.success("🔥 Firestore Connected (Local)")
             
-      
+       
         else:
             DB = None
             ST_FIRESTORE_ENABLED = False
@@ -64,7 +76,8 @@ try:
 except Exception as e:
     DB = None
     ST_FIRESTORE_ENABLED = False
-    st.sidebar.error(f"Connection Error: {e}")
+   
+    st.error(f"🔥 Database Connection Failed: {e}")
 
 
 GITHUB_USER = "usmaanimran" 
@@ -95,7 +108,7 @@ def fetch_live_data():
     """Fetches real-time data from Firestore."""
     if not DB: return None
     try:
-       
+        
         doc_ref = DB.collection('artifacts').document(CANVAS_APP_ID).collection('users').document(CANVAS_USER_ID).collection('riskData').document('latest')
         doc = doc_ref.get()
         if doc.exists:
@@ -108,7 +121,7 @@ def fetch_live_data():
 
 st.markdown("""
     <style>
-    /* Removed the specific .st-emotion-cache class as it causes black screens when it changes */
+    /* Safe styling that won't break if class names change */
     .block-container { padding-top: 1rem; } 
     .big-font { font-size: 70px !important; font-weight: 800; line-height: 1.1; }
     .hot-topic-marquee { background-color: #262730; padding: 12px; border-radius: 8px; border-left: 6px solid #FF4B4B; margin-bottom: 25px; color: #ffffff; font-weight: 500; box-shadow: 0 4px 6px rgba(0,0,0,0.1); }
@@ -122,14 +135,14 @@ def main_dashboard(source_mode, live_data):
     
     if live_data is None:
         st.info("📡 Connecting to satellite feeds...")
-       
+        
         return
         
     latest = live_data
     risk_score = int(latest.get("Total_Risk", 0))
     timestamp = latest.get("Timestamp", "N/A")
     
-    
+   
     if risk_score > 75:
         status_color = "🔴 CRITICAL"
         status_msg = "ACTIVATE CONTINGENCY"
@@ -173,7 +186,7 @@ def main_dashboard(source_mode, live_data):
 
     st.divider()
 
-    
+
     st.markdown("### 📊 Strategic Analysis")
     df_chart = fetch_risk_history_for_charting(source_mode)
     
@@ -239,7 +252,7 @@ def main_dashboard(source_mode, live_data):
 def system_footer():
     st.sidebar.markdown("---")
     
-    
+  
     source_mode = st.sidebar.radio(
         "Chart Data Source", 
         ["Cloud (GitHub)", "Local (Laptop)"],
