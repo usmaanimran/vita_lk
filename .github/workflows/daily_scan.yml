@@ -33,28 +33,41 @@ jobs:
           pip install firebase-admin feedparser pandas yfinance requests textblob
           if [ -f requirements.txt ]; then pip install -r requirements.txt; fi
 
-      
+     
       - name: Create Service Account Key
+        env:
+         
+          FIREBASE_KEY_BASE64: ${{ secrets.FIREBASE_SERVICE_ACCOUNT_KEY }}
         run: |
-          # We use base64 -d to decode the secret back into a valid JSON file
-          echo "${{ secrets.FIREBASE_SERVICE_ACCOUNT_KEY }}" | base64 -d > data/serviceAccountKey.json
+          # Use Python to decode the secret accurately
+          python -c "import os, base64; open('data/serviceAccountKey.json', 'wb').write(base64.b64decode(os.environ['FIREBASE_KEY_BASE64']))"
+          
+          # Verify file exists (but don't print content)
+          if [ -s data/serviceAccountKey.json ]; then
+            echo "✅ Success! Key file created securely."
+          else
+            echo "❌ ERROR: Key file creation failed."
+            exit 1
+          fi
 
      
       - name: Run Scraper
         run: python scraper.py
 
-   
+     
       - name: Sync CSV History to Firestore
         run: python data_migrator.py
 
-     
+      
       - name: Commit and Push Data to Main Branch
         run: |
           git config --global user.name "Vita.lk Bot"
           git config --global user.email "bot@vita.lk"
           
+          # Add all CSVs in data folder
           git add data/*.csv
           
+          # Commit if there are changes
           git commit -m "DATA UPDATE: $(date)" || echo "No changes to commit"
           
           git push origin main
