@@ -36,15 +36,15 @@ jobs:
      
       - name: Create Service Account Key
         env:
-          
-          FIREBASE_KEY_BASE64: ${{ secrets.FIREBASE_SERVICE_ACCOUNT_KEY }}
+         
+          FIREBASE_KEY_JSON: ${{ secrets.FIREBASE_SERVICE_ACCOUNT_KEY}}
         run: |
-          # Use Python to decode the secret accurately
-          python -c "import os, base64; open('data/serviceAccountKey.json', 'wb').write(base64.b64decode(os.environ['FIREBASE_KEY_BASE64']))"
+          # Use Python to write the string directly to a file (avoids shell corruption)
+          python -c "import os; open('data/serviceAccountKey.json', 'w').write(os.environ['FIREBASE_KEY_JSON'])"
           
-          # Verify file exists (but don't print content)
+          # Verify file exists
           if [ -s data/serviceAccountKey.json ]; then
-            echo "✅ Success! Key file created securely."
+            echo "✅ Success! Key file created."
           else
             echo "❌ ERROR: Key file creation failed."
             exit 1
@@ -54,7 +54,7 @@ jobs:
       - name: Run Scraper
         run: python scraper.py
 
-      
+    
       - name: Commit and Push Data to Main Branch
         run: |
           git config --global user.name "Vita.lk Bot"
