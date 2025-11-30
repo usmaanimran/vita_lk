@@ -3,9 +3,8 @@ import pandas as pd
 import plotly.express as px
 import os
 import json
-import ast 
+import ast
 from datetime import datetime, timedelta
-
 
 st.set_page_config(
     page_title="Vita.lk | Command Center",
@@ -13,35 +12,27 @@ st.set_page_config(
     layout="wide"
 )
 
-
 try:
     import firebase_admin
     from firebase_admin import credentials, firestore
     
-   
     if not firebase_admin._apps:
-       
         if "FIREBASE_KEY" in st.secrets:
             secret_value = st.secrets["FIREBASE_KEY"]
             key_dict = None
 
-          
             if isinstance(secret_value, dict):
                 key_dict = secret_value
-            
             else:
                 try:
-                   
                     key_dict = json.loads(secret_value, strict=False)
                 except json.JSONDecodeError:
-                    
                     try:
                         key_dict = ast.literal_eval(secret_value)
                     except Exception:
                         st.sidebar.error("⚠️ Secrets Parsing Error: Check JSON format.")
 
             if key_dict:
-                
                 if "private_key" in key_dict:
                     key_dict["private_key"] = key_dict["private_key"].replace("\\n", "\n")
 
@@ -54,49 +45,39 @@ try:
                 DB = None
                 ST_FIRESTORE_ENABLED = False
             
-       )
         elif os.path.exists("data/serviceAccountKey.json"):
             cred = credentials.Certificate("data/serviceAccountKey.json")
             firebase_admin.initialize_app(cred)
             DB = firestore.client()
             ST_FIRESTORE_ENABLED = True
             st.sidebar.success("🔥 Firestore Connected (Local)")
-            
-       
         else:
             DB = None
             ST_FIRESTORE_ENABLED = False
             st.sidebar.warning("⚠️ Access Key Missing. Live data disabled.")
-            
     else:
-       
         DB = firestore.client()
         ST_FIRESTORE_ENABLED = True
 
 except Exception as e:
     DB = None
     ST_FIRESTORE_ENABLED = False
-   
     st.error(f"🔥 Database Connection Failed: {e}")
 
-
-GITHUB_USER = "usmaanimran" 
+GITHUB_USER = "usmaanimran"
 REPO_NAME = "vita_lk"
 BRANCH = "main"
 BASE_URL = f"https://raw.githubusercontent.com/{GITHUB_USER}/{REPO_NAME}/{BRANCH}/"
 CANVAS_APP_ID = "sl_risk_monitor"
 CANVAS_USER_ID = "backend_service_user"
 
-
-
 @st.cache_data(ttl=30)
 def fetch_risk_history_for_charting(source_mode):
-    """Fetches historical CSV data for charts."""
     try:
         if source_mode == "Cloud":
             remote_url = BASE_URL + "data/risk_history.csv"
             return pd.read_csv(remote_url, storage_options={'User-Agent': 'Mozilla/5.0'})
-        else: 
+        else:
             local_path = os.path.join("data", "risk_history.csv")
             if os.path.exists(local_path):
                 return pd.read_csv(local_path)
@@ -105,10 +86,8 @@ def fetch_risk_history_for_charting(source_mode):
         return None
 
 def fetch_live_data():
-    """Fetches real-time data from Firestore."""
     if not DB: return None
     try:
-        
         doc_ref = DB.collection('artifacts').document(CANVAS_APP_ID).collection('users').document(CANVAS_USER_ID).collection('riskData').document('latest')
         doc = doc_ref.get()
         if doc.exists:
@@ -118,10 +97,8 @@ def fetch_live_data():
         st.warning(f"Live stream error: {e}") 
         return None
 
-
 st.markdown("""
     <style>
-    /* Safe styling that won't break if class names change */
     .block-container { padding-top: 1rem; } 
     .big-font { font-size: 70px !important; font-weight: 800; line-height: 1.1; }
     .hot-topic-marquee { background-color: #262730; padding: 12px; border-radius: 8px; border-left: 6px solid #FF4B4B; margin-bottom: 25px; color: #ffffff; font-weight: 500; box-shadow: 0 4px 6px rgba(0,0,0,0.1); }
@@ -129,20 +106,16 @@ st.markdown("""
     </style>
     """, unsafe_allow_html=True)
 
-
-
 def main_dashboard(source_mode, live_data):
     
     if live_data is None:
         st.info("📡 Connecting to satellite feeds...")
-        
         return
         
     latest = live_data
     risk_score = int(latest.get("Total_Risk", 0))
     timestamp = latest.get("Timestamp", "N/A")
     
-   
     if risk_score > 75:
         status_color = "🔴 CRITICAL"
         status_msg = "ACTIVATE CONTINGENCY"
@@ -185,7 +158,6 @@ def main_dashboard(source_mode, live_data):
         st.metric("Environmental", f"{latest.get('Environmental_Risk', 0)}/100")
 
     st.divider()
-
 
     st.markdown("### 📊 Strategic Analysis")
     df_chart = fetch_risk_history_for_charting(source_mode)
@@ -248,11 +220,9 @@ def main_dashboard(source_mode, live_data):
     else:
         st.info("No live news data available.")
 
-
 def system_footer():
     st.sidebar.markdown("---")
     
-  
     source_mode = st.sidebar.radio(
         "Chart Data Source", 
         ["Cloud (GitHub)", "Local (Laptop)"],
