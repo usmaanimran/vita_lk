@@ -24,27 +24,30 @@ jobs:
       - name: Set Up Python
         uses: actions/setup-python@v4
         with:
-          python-version: '3.9'
+          python-version: '3.11'
           cache: 'pip'
-
 
       - name: Install Dependencies
         run: |
           python -m pip install --upgrade pip
-          # We force install the required libraries here to ensure they exist
           pip install firebase-admin feedparser pandas yfinance requests textblob
           if [ -f requirements.txt ]; then pip install -r requirements.txt; fi
 
-    
+      
+      - name: Create Service Account Key
+        run: |
+          # We use base64 -d to decode the secret back into a valid JSON file
+          echo "${{ secrets.FIREBASE_SERVICE_ACCOUNT_KEY }}" | base64 -d > data/serviceAccountKey.json
+
+     
       - name: Run Scraper
         run: python scraper.py
 
-     
+   
       - name: Sync CSV History to Firestore
-        run: |
-          python data_migrator.py
+        run: python data_migrator.py
 
-      
+     
       - name: Commit and Push Data to Main Branch
         run: |
           git config --global user.name "Vita.lk Bot"
