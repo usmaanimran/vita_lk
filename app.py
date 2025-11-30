@@ -17,15 +17,22 @@ try:
     import firebase_admin
     from firebase_admin import credentials, firestore
     
-   
     cred_path = os.path.join("data", "serviceAccountKey.json")
     
-    if not firebase_admin._apps and os.path.exists(cred_path):
+    
+    if firebase_admin._apps:
+        DB = firestore.client()
+        ST_FIRESTORE_ENABLED = True
+    
+   
+    elif os.path.exists(cred_path):
         cred = credentials.Certificate(cred_path)
         firebase_admin.initialize_app(cred)
         DB = firestore.client()
         ST_FIRESTORE_ENABLED = True
         st.sidebar.success("🔥 Firestore Connected.")
+        
+   
     else:
         DB = None
         ST_FIRESTORE_ENABLED = False
@@ -33,6 +40,7 @@ try:
              st.sidebar.warning("⚠️ Missing 'data/serviceAccountKey.json'. Live mode disabled.")
         else:
             st.sidebar.warning("⚠️ Firebase Admin error.")
+
 except ImportError:
     DB = None
     ST_FIRESTORE_ENABLED = False
@@ -46,7 +54,7 @@ except Exception as e:
 GITHUB_USER = "usmaanimran" 
 REPO_NAME = "vita_lk"
 BRANCH = "main"
-BASE_URL = f"[https://raw.githubusercontent.com/](https://raw.githubusercontent.com/){GITHUB_USER}/{REPO_NAME}/{BRANCH}/"
+BASE_URL = f"https://raw.githubusercontent.com/{GITHUB_USER}/{REPO_NAME}/{BRANCH}/"
 CANVAS_APP_ID = "sl_risk_monitor"
 CANVAS_USER_ID = "backend_service_user"
 
@@ -65,7 +73,7 @@ def fetch_risk_history_for_charting(source_mode):
                 return pd.read_csv(local_path)
             return None
     except Exception as e:
-        st.error(f"Error loading historical data: {e}")
+        
         return None
 
 def fetch_live_data():
@@ -79,7 +87,7 @@ def fetch_live_data():
             return doc.to_dict()
         return None
     except Exception as e:
-        
+       
         st.warning(f"Live data stream interrupted: {e}") 
         return None
 
@@ -97,7 +105,7 @@ st.markdown("""
 
 def main_dashboard(source_mode, live_data):
     
-    
+   
     if live_data is None:
         st.warning("📡 Waiting for Live Intelligence Stream or CSV data...")
         return
@@ -107,7 +115,7 @@ def main_dashboard(source_mode, live_data):
     risk_score = int(latest.get("Total_Risk", 0))
     timestamp = latest.get("Timestamp", "N/A")
     
-    
+   
     if risk_score > 75:
         status_color = "🔴 CRITICAL"
         status_msg = "ACTIVATE CONTINGENCY"
@@ -137,11 +145,11 @@ def main_dashboard(source_mode, live_data):
         
         m1, m2 = st.columns(2)
         with m1:
-            
+           
             usd_val = float(latest.get('USD', 0))
             st.metric("USD/LKR Rate", f"LKR {usd_val:.2f}")
         with m2:
-            
+           
             oil_val = float(latest.get('Oil_Price', 0))
             st.metric("Brent Crude Oil", f"${oil_val:.2f}")
 
@@ -172,7 +180,7 @@ def main_dashboard(source_mode, live_data):
             risk_cols = ['Total_Risk', 'Economic_Risk', 'Social_Risk', 'Environmental_Risk', 'News_Risk']
             available_cols = [c for c in risk_cols if c in df_chart.columns]
             
-          
+           
             if not df_chart.empty:
                 fig = px.line(df_chart, x='Timestamp', y=available_cols, markers=True, 
                               color_discrete_map={"Total_Risk": "#FF4B4B", "Economic_Risk": "#1E88E5", 
@@ -208,7 +216,7 @@ def main_dashboard(source_mode, live_data):
    
     headlines_data = latest.get("Headlines", [])
     if headlines_data:
-       
+        
         df_news = pd.DataFrame(headlines_data)
         df_news = df_news.sort_values(by='Risk', ascending=False)
         
@@ -229,17 +237,25 @@ def main_dashboard(source_mode, live_data):
 
 def system_footer():
     st.sidebar.markdown("---")
+    
+   
+    source_mode = st.sidebar.radio(
+        "Chart Data Source", 
+        ["Local (Laptop)", "Cloud (GitHub)"],
+        index=0 
+    )
+    
     if st.sidebar.button("🔄 Force Refresh Data"):
         st.cache_data.clear()
         st.rerun()
 
-    
+   
     live_data = fetch_live_data() 
     
     
-    source_mode = "Cloud" if ST_FIRESTORE_ENABLED and live_data else "Local"
+    mode_keyword = "Local" if "Local" in source_mode else "Cloud"
     
-   
-    main_dashboard(source_mode, live_data)
+    
+    main_dashboard(mode_keyword, live_data)
     
 system_footer()
