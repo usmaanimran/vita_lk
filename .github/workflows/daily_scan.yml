@@ -1,12 +1,9 @@
 name: Vita.lk daily scan
 
 on:
- 
   repository_dispatch:
     types: [trigger_scan]
- 
   workflow_dispatch:
- 
   schedule:
     - cron: '*/20 * * * *'
 
@@ -35,9 +32,16 @@ jobs:
           python -m pip install --upgrade pip
           if [ -f requirements.txt ]; then pip install -r requirements.txt; fi
 
+     
       - name: Run Scraper
         run: python scraper.py
 
+    
+      - name: Sync CSV History to Firestore
+        run: |
+          python data_migrator.py
+
+     
       - name: Commit and Push Data to Main Branch
         run: |
           git config --global user.name "Vita.lk Bot"
