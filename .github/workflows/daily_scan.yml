@@ -36,7 +36,7 @@ jobs:
      
       - name: Create Service Account Key
         env:
-         
+          
           FIREBASE_KEY_BASE64: ${{ secrets.FIREBASE_SERVICE_ACCOUNT_KEY }}
         run: |
           # Use Python to decode the secret accurately
@@ -53,10 +53,6 @@ jobs:
      
       - name: Run Scraper
         run: python scraper.py
-
-     
-      - name: Sync CSV History to Firestore
-        run: python data_migrator.py
 
       
       - name: Commit and Push Data to Main Branch
