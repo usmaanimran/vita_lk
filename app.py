@@ -17,12 +17,25 @@ try:
     import firebase_admin
     from firebase_admin import credentials, firestore
     
-  
+    
     if not firebase_admin._apps:
-        
+       
         if "FIREBASE_KEY" in st.secrets:
-        
-            key_dict = json.loads(st.secrets["FIREBASE_KEY"])
+           
+            secret_value = st.secrets["FIREBASE_KEY"]
+            
+            if isinstance(secret_value, dict):
+               
+                key_dict = secret_value
+            else:
+              
+                try:
+                    key_dict = json.loads(secret_value, strict=False)
+                except json.JSONDecodeError:
+                   
+                    clean_json = secret_value.replace('\n', '\\n')
+                    key_dict = json.loads(clean_json, strict=False)
+
             cred = credentials.Certificate(key_dict)
             firebase_admin.initialize_app(cred)
             DB = firestore.client()
@@ -37,7 +50,7 @@ try:
             ST_FIRESTORE_ENABLED = True
             st.sidebar.success("🔥 Firestore Connected (Local)")
             
-     
+      
         else:
             DB = None
             ST_FIRESTORE_ENABLED = False
@@ -82,7 +95,7 @@ def fetch_live_data():
     """Fetches real-time data from Firestore."""
     if not DB: return None
     try:
-    
+       
         doc_ref = DB.collection('artifacts').document(CANVAS_APP_ID).collection('users').document(CANVAS_USER_ID).collection('riskData').document('latest')
         doc = doc_ref.get()
         if doc.exists:
@@ -109,7 +122,7 @@ def main_dashboard(source_mode, live_data):
     
     if live_data is None:
         st.info("📡 Connecting to satellite feeds...")
-      
+       
         return
         
     latest = live_data
@@ -226,7 +239,7 @@ def main_dashboard(source_mode, live_data):
 def system_footer():
     st.sidebar.markdown("---")
     
-   
+    
     source_mode = st.sidebar.radio(
         "Chart Data Source", 
         ["Cloud (GitHub)", "Local (Laptop)"],
