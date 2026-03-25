@@ -54,7 +54,7 @@ MARKET_DATA_FILE = os.path.join(DATA_FOLDER, "market_data.csv")
 NEWS_LOG_FILE = os.path.join(DATA_FOLDER, "daily_news_scan.csv")
 
 
-WEATHER_API_KEY = "25a1c1bf27df41f98a875031253011"
+WEATHER_API_KEY = ""
 
 DEMO_MODE = False 
 
